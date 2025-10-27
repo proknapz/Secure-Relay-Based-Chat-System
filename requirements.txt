@@ -1,0 +1,6 @@
+# Minimum dependencies for Secure Relay-Based Chat System
+# Install with: python -m pip install -r requirements.txt
+
+cryptography>=3.4
+# Optional (for tests/dev):
+# pytest>=6.0
