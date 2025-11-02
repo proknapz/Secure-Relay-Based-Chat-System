@@ -21,6 +21,7 @@ from common.protocol import (
     RegistrationMessage, RegistrationAck,
     AuthChallenge, AuthResponse, AuthVerify,
     SessionRequest, SessionResponse,
+    SessionEstablished,
     EncryptedMessage, MessageAck,
     MessageType, ProtocolConstants,
     parse_message, create_error
@@ -66,6 +67,9 @@ class RelayServer:
         
         # Active connections: ClientID -> ClientConnection
         self.active_connections: Dict[str, ClientConnection] = {}
+
+        # Active sessions: SessionID -> (participant_a, participant_b)
+        self.sessions: Dict[str, Tuple[str, str]] = {}
         
         # Thread-safe access
         self.registry_lock = threading.Lock()
@@ -352,6 +356,12 @@ class RelayServer:
             error = create_error("NOT_AUTHENTICATED", "Must authenticate first")
             self.send_message(conn.socket, error.to_json())
             return
+            
+        if msg.sender_id == msg.receiver_id:
+            print(f"[Relay] ✗ Client attempting to create session with self")
+            error = create_error("INVALID_RECEIVER", "Cannot create session with yourself")
+            self.send_message(conn.socket, error.to_json())
+            return
         
         # Find receiver's connection
         with self.connections_lock:
@@ -386,6 +396,28 @@ class RelayServer:
         # Forward the response
         self.send_message(sender_conn.socket, json.dumps(msg.to_dict()))
         print(f"[Relay] → Forwarded session response to {msg.receiver_id}")
+        # Create a session and notify both participants
+        try:
+            # Generate a simple session id
+            session_id = f"{msg.receiver_id}_{msg.sender_id}_{int(time.time())}"
+            self.sessions[session_id] = (msg.receiver_id, msg.sender_id)
+
+            # Notify both participants that the session is established
+            established = SessionEstablished(
+                session_id=session_id,
+                participant_a=msg.receiver_id,
+                participant_b=msg.sender_id
+            )
+
+            # Send to original sender (msg.receiver_id)
+            if sender_conn:
+                self.send_message(sender_conn.socket, established.to_json())
+
+            # Send to responder (conn) -- conn is the responder's connection
+            self.send_message(conn.socket, established.to_json())
+            print(f"[Relay] → Session {session_id} established between {msg.receiver_id} and {msg.sender_id}")
+        except Exception as e:
+            print(f"[Relay] Error creating session: {e}")
     
     # =====================================================
     # Phase 4: Message Routing
@@ -407,9 +439,30 @@ class RelayServer:
         # This is a simplified version that just forwards based on sender_id
         
         print(f"[Relay] → Forwarding encrypted message (relay cannot read content)")
-        
-        # TODO: Implement proper session-based routing
-        # For now, this is a placeholder
+
+        # Route based on session mapping
+        try:
+            participants = self.sessions.get(msg.session_id)
+            if not participants:
+                print(f"[Relay] ✗ Unknown session: {msg.session_id}")
+                return
+
+            # Determine recipient
+            a, b = participants
+            recipient_id = b if a == msg.sender_id else a
+
+            with self.connections_lock:
+                recipient_conn = self.active_connections.get(recipient_id)
+
+            if not recipient_conn:
+                print(f"[Relay] ✗ Recipient {recipient_id} not connected for session {msg.session_id}")
+                return
+
+            # Forward encrypted message JSON
+            self.send_message(recipient_conn.socket, msg.to_json())
+            print(f"[Relay] → Forwarded encrypted message to {recipient_id}")
+        except Exception as e:
+            print(f"[Relay] Error forwarding encrypted message: {e}")
     
     # =====================================================
     # Network Utilities

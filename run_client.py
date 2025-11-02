@@ -113,18 +113,56 @@ def main():
         print()
         print(f"Client {client_id} is ready for secure sessions!")
         print("Press Ctrl+C to disconnect")
-        
-        # Keep client running
-        while True:
-            time.sleep(1)
+        # Start listener thread
+        client.start_listener()
+
+        # Interactive prompt for demo actions
+        print("\nCommands:\n  session <peer_id>   - initiate session with peer\n  send <peer_id> <message> - send message to peer\n  peers - show sessions\n  status - show client status\n  exit - disconnect\n")
+        try:
+            while True:
+                cmd = input('> ').strip()
+                if not cmd:
+                    continue
+                parts = cmd.split(' ', 2)
+                if parts[0] == 'session' and len(parts) >= 2:
+                    client.send_session_request(parts[1])
+                elif parts[0] == 'send' and len(parts) >= 3:
+                    client.send_encrypted_message(parts[1], parts[2])
+                elif parts[0] == 'peers':
+                    print('Sessions:', client.sessions)
+                elif parts[0] == 'status':
+                    print(client.get_status())
+                elif parts[0] == 'exit':
+                    print(f"\nDisconnecting {client_id}...")
+                    client.stop_listener()
+                    client.disconnect()
+                    print(f"✓ Client {client_id} disconnected cleanly")
+                    break
+                else:
+                    print('Unknown command')
+        except Exception as e:
+            print(f"\n✗ Client error: {e}")
+        finally:
+            try:
+                client.stop_listener()
+                client.disconnect()
+            except:
+                pass  # Ignore errors during cleanup
     
     except KeyboardInterrupt:
         print("\n\nDisconnecting...")
-        client.disconnect()
+        try:
+            client.stop_listener()
+            client.disconnect()
+        except:
+            pass  # Ignore errors during cleanup
         print(f"✓ Client {client_id} disconnected")
     except Exception as e:
         print(f"\n✗ Error: {e}")
-        client.disconnect()
+        try:
+            client.disconnect()
+        except:
+            pass  # Ignore errors during cleanup
 
 
 if __name__ == "__main__":

@@ -29,6 +29,13 @@ class CryptoHandler:
         self.backend = default_backend()
         self.private_key = None
         self.public_key = None
+        # DH parameters from protocol
+        from common.protocol import ProtocolConstants
+        self.dh_prime = ProtocolConstants.DH_PRIME
+        self.dh_generator = ProtocolConstants.DH_GENERATOR
+        # Session state
+        self._dh_private = None
+        self._session_keys = {}  # session_id -> (enc_key, mac_key)
     
     # =====================================================
     # RSA Operations (Phase 1 & 2)
@@ -331,18 +338,45 @@ class CryptoHandler:
         Args:
             ciphertext_b64: Base64-encoded ciphertext
             key: Encryption key (K_enc)
-            seq_no: Sequence number
+            seq_no: Sequence number for KDF
             
         Returns:
             Decrypted plaintext
         """
-        ciphertext = base64.b64decode(ciphertext_b64)
-        keystream = self.kdf_stream(key, seq_no, len(ciphertext))
+        try:
+            # Decode the base64 ciphertext
+            ciphertext = base64.b64decode(ciphertext_b64)
+            
+            # Generate keystream with sequence number
+            keystream = self.kdf_stream(key, seq_no, len(ciphertext))
+            
+            # XOR ciphertext with keystream
+            plaintext_bytes = bytes(c ^ k for c, k in zip(ciphertext, keystream))
+            
+            # Attempt to decode as UTF-8
+            return plaintext_bytes.decode('utf-8')
+        except UnicodeDecodeError as e:
+            raise ValueError(f"Failed to decode decrypted message as UTF-8: {e}")
         
-        # XOR ciphertext with keystream (same operation as encryption)
-        plaintext_bytes = bytes(c ^ k for c, k in zip(ciphertext, keystream))
+    def verify_mac(self, ciphertext: str, mac_b64: str, mac_key: bytes) -> bool:
+        """
+        Verify the MAC of a message
         
-        return plaintext_bytes.decode('utf-8')
+        Args:
+            ciphertext: The encrypted message
+            mac_b64: Base64-encoded MAC to verify
+            mac_key: The MAC key (K_mac)
+            
+        Returns:
+            True if MAC is valid, False otherwise
+        """
+        try:
+            received_mac = base64.b64decode(mac_b64)
+            computed_mac = hmac.new(mac_key, ciphertext.encode('utf-8'), hashlib.sha256).digest()
+            return hmac.compare_digest(received_mac, computed_mac)
+        except Exception as e:
+            print(f"MAC verification error: {e}")
+            return False
     
     # =====================================================
     # HMAC Operations (Phase 4)
