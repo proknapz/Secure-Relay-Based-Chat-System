@@ -57,6 +57,7 @@ class SecureChatClient:
         self.session_by_id: Dict[str, str] = {}
         # sequence counters per session
         self.seq_counters: Dict[str, int] = {}
+        self.incoming_seq_counters: Dict[str, int] = {}
         
         print(f"[{self.client_id}] Client initialized")
     
@@ -413,6 +414,28 @@ class SecureChatClient:
                 if isinstance(message, SessionRequest):
                     print(f"[{self.client_id}] ← SessionRequest from {message.sender_id}")
                     
+                    # Verify signature
+                    try:
+                        if not message.sender_pubkey:
+                            print(f"[{self.client_id}] ✗ Missing public key in SessionRequest")
+                            continue
+                            
+                        signable_data = message.get_signable_data()
+                        is_valid = self.crypto.verify_signature(
+                            message.sender_pubkey.encode('utf-8'),
+                            signable_data,
+                            message.signature
+                        )
+                        
+                        if not is_valid:
+                            print(f"[{self.client_id}] ✗ Invalid signature on SessionRequest from {message.sender_id}")
+                            continue
+                            
+                        print(f"[{self.client_id}] ✓ Verified signature from {message.sender_id}")
+                    except Exception as e:
+                        print(f"[{self.client_id}] ✗ Error verifying signature: {e}")
+                        continue
+                    
                     # Save peer's DH public value
                     peer_public = self.crypto.base64_to_int(message.ephemeral_dh_public)
                     
@@ -439,13 +462,42 @@ class SecureChatClient:
                         nonce_b=nonce_b,
                         ephemeral_dh_public=self.crypto.int_to_base64(public_value),
                         signature="",
-                        timestamp=time.time()
+                        timestamp=time.time(),
+                        sender_pubkey=self.get_public_key()
                     )
+                    
+                    # Sign the response
+                    signable_data = response.get_signable_data()
+                    response.signature = self.crypto.sign_data(signable_data)
+                    
                     self.send_message(response.to_json())
                     print(f"[{self.client_id}] → Sent SessionResponse to {message.sender_id}")
 
                 elif isinstance(message, SessionResponse):
                     print(f"[{self.client_id}] ← SessionResponse from {message.sender_id}")
+                    
+                    # Verify signature
+                    try:
+                        if not message.sender_pubkey:
+                            print(f"[{self.client_id}] ✗ Missing public key in SessionResponse")
+                            continue
+                            
+                        signable_data = message.get_signable_data()
+                        is_valid = self.crypto.verify_signature(
+                            message.sender_pubkey.encode('utf-8'),
+                            signable_data,
+                            message.signature
+                        )
+                        
+                        if not is_valid:
+                            print(f"[{self.client_id}] ✗ Invalid signature on SessionResponse from {message.sender_id}")
+                            continue
+                            
+                        print(f"[{self.client_id}] ✓ Verified signature from {message.sender_id}")
+                    except Exception as e:
+                        print(f"[{self.client_id}] ✗ Error verifying signature: {e}")
+                        continue
+
                     # Save peer's public value for key derivation
                     peer_public = self.crypto.base64_to_int(message.ephemeral_dh_public)
                     self._temp_session_data = {
@@ -461,6 +513,7 @@ class SecureChatClient:
                     self.sessions[peer] = message.session_id
                     self.session_by_id[message.session_id] = peer
                     self.seq_counters[message.session_id] = 0
+                    self.incoming_seq_counters[message.session_id] = 0
                     
                     try:
                         # Get saved session data
@@ -502,7 +555,13 @@ class SecureChatClient:
                         if not k_enc or not k_mac:
                             print(f"[{self.client_id}] ✗ No keys for session {message.session_id}")
                             return
-                            
+                        
+                        # Replay protection
+                        last_seq = self.incoming_seq_counters.get(message.session_id, 0)
+                        if message.seq_no <= last_seq:
+                            print(f"[{self.client_id}] ✗ Replay detected! Seq {message.seq_no} <= {last_seq}")
+                            return
+                        
                         # Verify HMAC first
                         if not self.crypto.verify_hmac(k_mac, message.get_hmac_data(), message.hmac):
                             print(f"[{self.client_id}] ✗ Invalid HMAC for message")
@@ -511,6 +570,10 @@ class SecureChatClient:
                         # Decrypt message with sequence number
                         try:
                             plaintext = self.crypto.decrypt_message(message.ciphertext, k_enc, message.seq_no)
+                            
+                            # Update sequence counter only after successful decryption/verification
+                            self.incoming_seq_counters[message.session_id] = message.seq_no
+                            
                             print(f"\n[{self.client_id}] ← Message from {message.sender_id}:")
                             print(f"    Content: {plaintext}")
                             print(f"    Status: ✓ MAC verified | Session: {message.session_id} | Sequence: {message.seq_no}")
@@ -573,8 +636,14 @@ class SecureChatClient:
                 nonce_a=nonce_a,
                 ephemeral_dh_public=self.crypto.int_to_base64(public_value),
                 signature="",
-                timestamp=time.time()
+                timestamp=time.time(),
+                sender_pubkey=self.get_public_key()
             )
+            
+            # Sign the request
+            signable_data = req.get_signable_data()
+            req.signature = self.crypto.sign_data(signable_data)
+            
             self.send_message(req.to_json())
             print(f"[{self.client_id}] → Sent SessionRequest to {receiver_id}")
             return True

@@ -179,6 +179,7 @@ class SessionRequest:
     ephemeral_dh_public: str = ""  # Base64 encoded g^a mod p
     signature: str = ""  # Base64 encoded signature of entire message
     timestamp: float = 0.0
+    sender_pubkey: str = ""  # PEM format
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -196,7 +197,7 @@ class SessionRequest:
     
     def get_signable_data(self) -> str:
         """Data to sign: everything except the signature itself"""
-        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.ephemeral_dh_public}{self.timestamp}"
+        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.ephemeral_dh_public}{self.timestamp}{self.sender_pubkey}"
 
 
 @dataclass
@@ -214,6 +215,7 @@ class SessionResponse:
     ephemeral_dh_public: str = ""  # Base64 encoded g^b mod p
     signature: str = ""  # Base64 encoded
     timestamp: float = 0.0
+    sender_pubkey: str = ""  # PEM format
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -231,7 +233,7 @@ class SessionResponse:
     
     def get_signable_data(self) -> str:
         """Data to sign: everything except the signature itself"""
-        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.nonce_b}{self.ephemeral_dh_public}{self.timestamp}"
+        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.nonce_b}{self.ephemeral_dh_public}{self.timestamp}{self.sender_pubkey}"
 
 
 @dataclass

@@ -357,6 +357,13 @@ class RelayServer:
             self.send_message(conn.socket, error.to_json())
             return
             
+        # Verify sender identity
+        if msg.sender_id != conn.client_id:
+            print(f"[Relay] ✗ Client {conn.client_id} attempting to spoof {msg.sender_id}")
+            error = create_error("IDENTITY_MISMATCH", "Sender ID does not match authenticated client")
+            self.send_message(conn.socket, error.to_json())
+            return
+
         if msg.sender_id == msg.receiver_id:
             print(f"[Relay] ✗ Client attempting to create session with self")
             error = create_error("INVALID_RECEIVER", "Cannot create session with yourself")
@@ -383,6 +390,11 @@ class RelayServer:
         
         if not conn.is_authenticated:
             print(f"[Relay] ✗ Client not authenticated")
+            return
+            
+        # Verify sender identity
+        if msg.sender_id != conn.client_id:
+            print(f"[Relay] ✗ Client {conn.client_id} attempting to spoof {msg.sender_id}")
             return
         
         # Find sender's connection
