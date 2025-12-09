@@ -58,6 +58,9 @@ class SecureChatClient:
         # sequence counters per session
         self.seq_counters: Dict[str, int] = {}
         self.incoming_seq_counters: Dict[str, int] = {}
+        # Key refresh thread
+        self._key_refresh_thread: Optional[threading.Thread] = None
+        self._key_refresh_running = False
         
         print(f"[{self.client_id}] Client initialized")
     
@@ -353,6 +356,8 @@ class SecureChatClient:
         self.listener_running = True
         self.listener_thread = threading.Thread(target=self._listen_loop, daemon=True)
         self.listener_thread.start()
+        # Also start key refresh thread when listener starts
+        self.start_key_refresh()
 
     def stop_listener(self):
         """Stop the listener thread"""
@@ -378,6 +383,8 @@ class SecureChatClient:
                 pass  # Ignore any errors during cleanup
             finally:
                 self.listener_thread = None
+        # Stop key refresh thread as well
+        self.stop_key_refresh()
 
     def _listen_loop(self):
         """Loop to receive and handle incoming messages from relay"""
@@ -454,6 +461,10 @@ class SecureChatClient:
                         'nonce_b': nonce_b,
                     }
                     
+                    # If this is a refresh for an existing session, derive new keys for that session
+                    parent_session = getattr(message, 'parent_session_id', '')
+                    is_refresh = getattr(message, 'is_refresh', False)
+
                     # Send response with our public value
                     response = SessionResponse(
                         sender_id=self.client_id,
@@ -463,13 +474,33 @@ class SecureChatClient:
                         ephemeral_dh_public=self.crypto.int_to_base64(public_value),
                         signature="",
                         timestamp=time.time(),
-                        sender_pubkey=self.get_public_key()
+                        sender_pubkey=self.get_public_key(),
+                        parent_session_id=parent_session,
+                        is_refresh=is_refresh
                     )
-                    
+
                     # Sign the response
                     signable_data = response.get_signable_data()
                     response.signature = self.crypto.sign_data(signable_data)
-                    
+
+                    # If this is a refresh, compute shared secret and update keys for the parent session now
+                    if parent_session:
+                        try:
+                            shared_secret = self.crypto.compute_dh_shared_secret(
+                                private_value,
+                                peer_public,
+                                self.crypto.dh_prime
+                            )
+                            salt = self.crypto.create_salt(parent_session, message.nonce_a, nonce_b)
+                            k_enc, k_mac = self.crypto.derive_session_keys(shared_secret, salt)
+                            self.crypto._session_keys[parent_session] = (k_enc, k_mac)
+                            # reset counters for refreshed session
+                            self.seq_counters[parent_session] = 0
+                            self.incoming_seq_counters[parent_session] = 0
+                            print(f"[{self.client_id}] ✓ Refreshed session keys for {parent_session} (responder)")
+                        except Exception as e:
+                            print(f"[{self.client_id}] ✗ Failed to refresh keys as responder: {e}")
+
                     self.send_message(response.to_json())
                     print(f"[{self.client_id}] → Sent SessionResponse to {message.sender_id}")
 
@@ -505,6 +536,29 @@ class SecureChatClient:
                         'nonce_a': message.nonce_a,
                         'nonce_b': message.nonce_b
                     }
+
+                    # If this is a refresh response for an existing session, derive and replace keys now
+                    parent_session = getattr(message, 'parent_session_id', '')
+                    is_refresh = getattr(message, 'is_refresh', False)
+                    if parent_session:
+                        try:
+                            # Compute DH shared secret using our saved private value
+                            shared_secret = self.crypto.compute_dh_shared_secret(
+                                self.crypto._dh_private,
+                                peer_public,
+                                self.crypto.dh_prime
+                            )
+                            salt = self.crypto.create_salt(parent_session, message.nonce_a, message.nonce_b)
+                            k_enc, k_mac = self.crypto.derive_session_keys(shared_secret, salt)
+                            self.crypto._session_keys[parent_session] = (k_enc, k_mac)
+                            # reset sequence counters for refreshed session
+                            self.seq_counters[parent_session] = 0
+                            self.incoming_seq_counters[parent_session] = 0
+                            print(f"[{self.client_id}] ✓ Refreshed session keys for {parent_session} (initiator)")
+                            # clean up temp data
+                            del self._temp_session_data
+                        except Exception as e:
+                            print(f"[{self.client_id}] ✗ Failed to refresh keys as initiator: {e}")
 
                 elif isinstance(message, SessionEstablished):
                     print(f"[{self.client_id}] ← SessionEstablished: {message.session_id} ({message.participant_a} ↔ {message.participant_b})")
@@ -574,7 +628,9 @@ class SecureChatClient:
                             # Update sequence counter only after successful decryption/verification
                             self.incoming_seq_counters[message.session_id] = message.seq_no
                             
-                            print(f"\n[{self.client_id}] ← Message from {message.sender_id}:")
+                            # Determine sender from session mapping (hide on-wire sender)
+                            peer = self.session_by_id.get(message.session_id, "unknown")
+                            print(f"\n[{self.client_id}] ← Message from {peer}:")
                             print(f"    Content: {plaintext}")
                             print(f"    Status: ✓ MAC verified | Session: {message.session_id} | Sequence: {message.seq_no}")
                             print("\n> ", end="", flush=True)  # Restore prompt
@@ -637,7 +693,9 @@ class SecureChatClient:
                 ephemeral_dh_public=self.crypto.int_to_base64(public_value),
                 signature="",
                 timestamp=time.time(),
-                sender_pubkey=self.get_public_key()
+                sender_pubkey=self.get_public_key(),
+                parent_session_id="",
+                is_refresh=False
             )
             
             # Sign the request
@@ -679,7 +737,6 @@ class SecureChatClient:
 
         msg = EncryptedMessage(
             session_id=session_id,
-            sender_id=self.client_id,
             seq_no=seq,
             ciphertext=ciphertext,
             hmac=mac,
@@ -692,3 +749,66 @@ class SecureChatClient:
         except Exception as e:
             print(f"[{self.client_id}] ✗ Failed to send message: {e}")
             return False
+
+    # =====================================================
+    # Key Refresh
+    # =====================================================
+    def start_key_refresh(self):
+        """Start background thread to periodically refresh session keys"""
+        if self._key_refresh_thread and self._key_refresh_thread.is_alive():
+            return
+        self._key_refresh_running = True
+        self._key_refresh_thread = threading.Thread(target=self._key_refresh_loop, daemon=True)
+        self._key_refresh_thread.start()
+
+    def stop_key_refresh(self):
+        """Stop background key-refresh thread"""
+        self._key_refresh_running = False
+        if self._key_refresh_thread and self._key_refresh_thread.is_alive():
+            self._key_refresh_thread.join(timeout=1.0)
+            self._key_refresh_thread = None
+
+    def _key_refresh_loop(self):
+        """Loop that periodically initiates ephemeral DH exchanges to refresh keys for active sessions"""
+        while self._key_refresh_running:
+            try:
+                # Sleep for configured interval
+                time.sleep(ProtocolConstants.KEY_REFRESH_INTERVAL)
+
+                # Only refresh when client is ready
+                if not self.is_ready():
+                    continue
+
+                # Iterate active sessions and trigger refresh
+                for peer, session_id in list(self.sessions.items()):
+                    try:
+                        # Initiate a refresh request for this session
+                        private_value, public_value = self.crypto.generate_dh_keypair(
+                            self.crypto.dh_prime,
+                            self.crypto.dh_generator
+                        )
+                        self.crypto._dh_private = private_value
+                        nonce_a = self.crypto.generate_nonce(16)
+
+                        from common.protocol import SessionRequest
+                        req = SessionRequest(
+                            sender_id=self.client_id,
+                            receiver_id=peer,
+                            nonce_a=nonce_a,
+                            ephemeral_dh_public=self.crypto.int_to_base64(public_value),
+                            signature="",
+                            timestamp=time.time(),
+                            sender_pubkey=self.get_public_key(),
+                            parent_session_id=session_id,
+                            is_refresh=True
+                        )
+                        # Sign
+                        req.signature = self.crypto.sign_data(req.get_signable_data())
+                        self.send_message(req.to_json())
+                        print(f"[{self.client_id}] → Sent key-refresh SessionRequest for session {session_id} to {peer}")
+                    except Exception as e:
+                        print(f"[{self.client_id}] ✗ Failed to send key-refresh for {session_id}: {e}")
+
+            except Exception:
+                # Continue loop even on unexpected errors
+                continue

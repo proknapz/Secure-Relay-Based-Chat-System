@@ -5,7 +5,7 @@ config.py - Configuration for Secure Chat System
 class Config:
     # Network settings
     RELAY_HOST = "localhost"
-    RELAY_PORT = 5000
+    RELAY_PORT = 6000
     
     # File paths
     RELAY_PUBKEY_FILE = "relay_pubkey.pem"

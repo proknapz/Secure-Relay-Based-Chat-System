@@ -180,6 +180,8 @@ class SessionRequest:
     signature: str = ""  # Base64 encoded signature of entire message
     timestamp: float = 0.0
     sender_pubkey: str = ""  # PEM format
+    parent_session_id: str = ""  # If this is a refresh, which session to refresh
+    is_refresh: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -197,7 +199,7 @@ class SessionRequest:
     
     def get_signable_data(self) -> str:
         """Data to sign: everything except the signature itself"""
-        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.ephemeral_dh_public}{self.timestamp}{self.sender_pubkey}"
+        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.ephemeral_dh_public}{self.timestamp}{self.sender_pubkey}{self.parent_session_id}{self.is_refresh}"
 
 
 @dataclass
@@ -216,6 +218,8 @@ class SessionResponse:
     signature: str = ""  # Base64 encoded
     timestamp: float = 0.0
     sender_pubkey: str = ""  # PEM format
+    parent_session_id: str = ""  # If this is a refresh, which session to refresh
+    is_refresh: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -233,7 +237,7 @@ class SessionResponse:
     
     def get_signable_data(self) -> str:
         """Data to sign: everything except the signature itself"""
-        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.nonce_b}{self.ephemeral_dh_public}{self.timestamp}{self.sender_pubkey}"
+        return f"{self.sender_id}{self.receiver_id}{self.nonce_a}{self.nonce_b}{self.ephemeral_dh_public}{self.timestamp}{self.sender_pubkey}{self.parent_session_id}{self.is_refresh}"
 
 
 @dataclass
@@ -269,7 +273,6 @@ class EncryptedMessage:
     """
     msg_type: str = MessageType.ENCRYPTED_MESSAGE.value
     session_id: str = ""
-    sender_id: str = ""
     seq_no: int = 0
     ciphertext: str = ""  # Base64 encoded
     hmac: str = ""  # Base64 encoded
@@ -283,7 +286,10 @@ class EncryptedMessage:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'EncryptedMessage':
-        return cls(**data)
+        # Allow incoming dicts that may include extra fields (e.g., older clients)
+        allowed = {'msg_type', 'session_id', 'seq_no', 'ciphertext', 'hmac', 'timestamp'}
+        filtered = {k: v for k, v in data.items() if k in allowed}
+        return cls(**filtered)
     
     @classmethod
     def from_json(cls, json_str: str) -> 'EncryptedMessage':

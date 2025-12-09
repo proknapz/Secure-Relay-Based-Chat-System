@@ -9,6 +9,7 @@ This script:
 
 import sys
 import os
+import argparse
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,13 +30,18 @@ def save_relay_public_key(relay: RelayServer):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Start the Relay Server')
+    parser.add_argument('--host', default=Config.RELAY_HOST, help='Host to bind the relay')
+    parser.add_argument('--port', type=int, default=Config.RELAY_PORT, help='Port to bind the relay')
+    args = parser.parse_args()
+
     print("=" * 60)
     print("   SECURE RELAY-BASED CHAT SYSTEM - RELAY SERVER")
     print("=" * 60)
     print()
-    
-    # Create relay server
-    relay = RelayServer(host=Config.RELAY_HOST, port=Config.RELAY_PORT)
+
+    # Create relay server with CLI-configured host/port
+    relay = RelayServer(host=args.host, port=args.port)
     
     # Save public key for clients
     save_relay_public_key(relay)

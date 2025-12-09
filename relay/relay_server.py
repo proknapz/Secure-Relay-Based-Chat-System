@@ -440,7 +440,9 @@ class RelayServer:
         Route encrypted message to recipient
         Relay cannot decrypt - messages are end-to-end encrypted
         """
-        print(f"[Relay] Encrypted message from {msg.sender_id} (session: {msg.session_id}, seq: {msg.seq_no})")
+        # Use connection info for sender identity (do not trust on-wire sender fields)
+        sender_id = conn.client_id if conn.client_id else "unknown"
+        print(f"[Relay] Encrypted message from {sender_id} (session: {msg.session_id}, seq: {msg.seq_no})")
         
         if not conn.is_authenticated:
             print(f"[Relay] ✗ Client not authenticated")
@@ -459,9 +461,10 @@ class RelayServer:
                 print(f"[Relay] ✗ Unknown session: {msg.session_id}")
                 return
 
-            # Determine recipient
+            # Determine recipient using authenticated connection identity
             a, b = participants
-            recipient_id = b if a == msg.sender_id else a
+            sender = conn.client_id
+            recipient_id = b if a == sender else a
 
             with self.connections_lock:
                 recipient_conn = self.active_connections.get(recipient_id)

@@ -16,6 +16,7 @@ This script:
 import sys
 import os
 import time
+import argparse
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -40,13 +41,14 @@ def load_relay_public_key() -> bytes:
 
 
 def main():
-    # Check arguments
-    if len(sys.argv) < 2:
-        print("Usage: python run_client.py <ClientID>")
-        print("Example: python run_client.py Alice")
-        sys.exit(1)
-    
-    client_id = sys.argv[1]
+    # CLI arguments
+    parser = argparse.ArgumentParser(description='Start a SecureChat client')
+    parser.add_argument('client_id', help='Client ID')
+    parser.add_argument('--relay-host', default=Config.RELAY_HOST, help='Relay host')
+    parser.add_argument('--relay-port', type=int, default=Config.RELAY_PORT, help='Relay port')
+    args = parser.parse_args()
+
+    client_id = args.client_id
     
     print("=" * 60)
     print(f"   SECURE RELAY-BASED CHAT SYSTEM - CLIENT: {client_id}")
@@ -56,8 +58,8 @@ def main():
     # Create client
     client = SecureChatClient(
         client_id=client_id,
-        relay_host=Config.RELAY_HOST,
-        relay_port=Config.RELAY_PORT
+        relay_host=args.relay_host,
+        relay_port=args.relay_port
     )
     
     try:
