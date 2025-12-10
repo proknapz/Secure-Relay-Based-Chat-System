@@ -750,7 +750,8 @@ class SecureChatClient:
         )
         try:
             self.send_message(msg.to_json())
-            print(f"[{self.client_id}] → Sent EncryptedMessage to {peer_id} (session {session_id})")
+            print(f"[{self.client_id}] → Sent EncryptedMessage to {peer_id} "
+                f"(session {session_id}, seq {seq}, ciphertext {ciphertext}, hmac {mac})")
             return True
         except Exception as e:
             print(f"[{self.client_id}] ✗ Failed to send message: {e}")
