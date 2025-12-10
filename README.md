@@ -5,7 +5,7 @@ Terminal 1:
 python run_relay.py
 
 Terminal 2:
-python mitm_proxy.py
+python ./tools/mitm_proxy.py
 
 Terminal 3:
 python run_client.py Alice --relay-port 5001

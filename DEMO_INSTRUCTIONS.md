@@ -37,8 +37,6 @@ In Terminal 4, run:
 
 python run_client.py Bob
 
-Bob connects directly to Relay (port 6000).
-
 ## Step 5: Establish Session
 In Terminal 3 (Alice), run:
 

@@ -116,6 +116,8 @@ class MitmProxy:
 
                 # Command loop (blocks until user quits or connection breaks)
                 try:
+                    # Print the prompt after client connects and before command loop starts
+                    print("\nProxy> ", end="", flush=True)
                     self.command_loop()
                 finally:
                     # Clean up after command loop exits
