@@ -604,22 +604,28 @@ class SecureChatClient:
 
                 elif isinstance(message, EncryptedMessage):
                     try:
+                        # Verbose arrival log for diagnostics
+                        try:
+                            now_ts = time.time()
+                            print(f"[{self.client_id}] <<< EncryptedMessage ARRIVED (session: {message.session_id}, seq: {message.seq_no}, t={now_ts})")
+                        except Exception:
+                            pass
                         # Get session keys
                         k_enc, k_mac = self.crypto._session_keys.get(message.session_id, (None, None))
                         if not k_enc or not k_mac:
                             print(f"[{self.client_id}] ✗ No keys for session {message.session_id}")
-                            return
+                            continue
                         
                         # Replay protection
                         last_seq = self.incoming_seq_counters.get(message.session_id, 0)
                         if message.seq_no <= last_seq:
                             print(f"[{self.client_id}] ✗ Replay detected! Seq {message.seq_no} <= {last_seq}")
-                            return
+                            continue
                         
                         # Verify HMAC first
                         if not self.crypto.verify_hmac(k_mac, message.get_hmac_data(), message.hmac):
                             print(f"[{self.client_id}] ✗ Invalid HMAC for message")
-                            return
+                            continue
                             
                         # Decrypt message with sequence number
                         try:

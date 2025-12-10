@@ -70,6 +70,8 @@ class RelayServer:
 
         # Active sessions: SessionID -> (participant_a, participant_b)
         self.sessions: Dict[str, Tuple[str, str]] = {}
+        # Debug: forward counts for (session_id, seq_no)
+        self._forward_counts: Dict[Tuple[str, int], int] = {}
         
         # Thread-safe access
         self.registry_lock = threading.Lock()
@@ -475,7 +477,11 @@ class RelayServer:
 
             # Forward encrypted message JSON
             self.send_message(recipient_conn.socket, msg.to_json())
-            print(f"[Relay] → Forwarded encrypted message to {recipient_id}")
+            # Debugging: count forwards per session+seq
+            key = (msg.session_id, msg.seq_no)
+            prev = self._forward_counts.get(key, 0) + 1
+            self._forward_counts[key] = prev
+            print(f"[Relay] → Forwarded encrypted message to {recipient_id} (forward_count={prev})")
         except Exception as e:
             print(f"[Relay] Error forwarding encrypted message: {e}")
     

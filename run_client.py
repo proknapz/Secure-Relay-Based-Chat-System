@@ -46,6 +46,7 @@ def main():
     parser.add_argument('client_id', help='Client ID')
     parser.add_argument('--relay-host', default=Config.RELAY_HOST, help='Relay host')
     parser.add_argument('--relay-port', type=int, default=Config.RELAY_PORT, help='Relay port')
+    parser.add_argument('--demo', action='store_true', help='Enable demo output (show encrypted message JSON)')
     args = parser.parse_args()
 
     client_id = args.client_id
@@ -61,6 +62,10 @@ def main():
         relay_host=args.relay_host,
         relay_port=args.relay_port
     )
+
+    # Enable demo output if requested (convenience for Attack Simulator)
+    if getattr(args, 'demo', False):
+        os.environ['DEMO_MODE'] = '1'
     
     try:
         # Step 1: Connect
