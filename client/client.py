@@ -419,6 +419,10 @@ class SecureChatClient:
                 from common.protocol import SessionRequest, SessionResponse, SessionEstablished, EncryptedMessage, ErrorMessage
 
                 if isinstance(message, SessionRequest):
+                    try:
+                        print(f"DEBUG: RECV_SESSION_REQUEST_JSON: {json.dumps(message.to_dict())}")
+                    except Exception:
+                        pass
                     print(f"[{self.client_id}] ← SessionRequest from {message.sender_id}")
                     
                     # Verify signature
@@ -505,6 +509,10 @@ class SecureChatClient:
                     print(f"[{self.client_id}] → Sent SessionResponse to {message.sender_id}")
 
                 elif isinstance(message, SessionResponse):
+                    try:
+                        print(f"DEBUG: RECV_SESSION_RESPONSE_JSON: {json.dumps(message.to_dict())}")
+                    except Exception:
+                        pass
                     print(f"[{self.client_id}] ← SessionResponse from {message.sender_id}")
                     
                     # Verify signature
@@ -707,7 +715,16 @@ class SecureChatClient:
             # Sign the request
             signable_data = req.get_signable_data()
             req.signature = self.crypto.sign_data(signable_data)
-            
+
+            # DEBUG: print request JSON and full fields
+            try:
+                print(f"DEBUG: SESSION_REQUEST_JSON: {req.to_json()}")
+                print(f"DEBUG: SESSION_REQUEST_EPHEMERAL_DH: {req.ephemeral_dh_public}")
+                print(f"DEBUG: SESSION_REQUEST_NONCE_A: {req.nonce_a}")
+                print(f"DEBUG: SESSION_REQUEST_SENDER_PUBKEY:\n{req.sender_pubkey}")
+            except Exception:
+                pass
+
             self.send_message(req.to_json())
             print(f"[{self.client_id}] → Sent SessionRequest to {receiver_id}")
             return True

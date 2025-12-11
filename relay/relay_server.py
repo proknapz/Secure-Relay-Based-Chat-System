@@ -352,6 +352,14 @@ class RelayServer:
         Relay just forwards - it cannot read the DH values or derive keys
         """
         print(f"[Relay] Session request: {msg.sender_id} → {msg.receiver_id}")
+        # DEBUG: show incoming session request JSON and a short preview of DH/nonce
+        try:
+            print(f"DEBUG: RECV_SESSION_REQUEST_JSON: {json.dumps(msg.to_dict())}")
+            print(f"DEBUG: RECV_SESSION_SENDER_PUBKEY:\n{msg.sender_pubkey}")
+            print(f"DEBUG: RECV_SESSION_EPHEMERAL_DH: {msg.ephemeral_dh_public}")
+            print(f"DEBUG: RECV_SESSION_NONCE_A: {msg.nonce_a}")
+        except Exception:
+            pass
         
         if not conn.is_authenticated:
             print(f"[Relay] ✗ Client not authenticated")
@@ -389,6 +397,14 @@ class RelayServer:
     def handle_session_response(self, conn: ClientConnection, msg: SessionResponse):
         """Forward session response from receiver back to sender"""
         print(f"[Relay] Session response: {msg.sender_id} → {msg.receiver_id}")
+        # DEBUG: show incoming session response JSON and previews
+        try:
+            print(f"DEBUG: RECV_SESSION_RESPONSE_JSON: {json.dumps(msg.to_dict())}")
+            print(f"DEBUG: RECV_SESSION_RESPONSE_SENDER_PUBKEY:\n{msg.sender_pubkey}")
+            print(f"DEBUG: RECV_SESSION_RESPONSE_EPHEMERAL_DH: {msg.ephemeral_dh_public}")
+            print(f"DEBUG: RECV_SESSION_RESPONSE_NONCES: nonce_a={msg.nonce_a}, nonce_b={msg.nonce_b}")
+        except Exception:
+            pass
         
         if not conn.is_authenticated:
             print(f"[Relay] ✗ Client not authenticated")

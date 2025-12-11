@@ -311,8 +311,15 @@ class MitmProxy:
                         seq = self.last_encrypted_msg_json.get('seq_no')
                         print(f"\n[Proxy] Replaying message seq {seq}...")
                         try:
+                            # Send the raw framed message
                             self.relay_socket.sendall(self.last_encrypted_msg_raw)
                             print("[Proxy] Replay sent!")
+                            # Log the actual JSON that was sent for auditing
+                            try:
+                                print("\n[Proxy] [REPLAYED MESSAGE JSON]")
+                                print(json.dumps(self.last_encrypted_msg_json, indent=2))
+                            except Exception:
+                                print("[Proxy] (Unable to pretty-print replayed JSON)")
                         except Exception as e:
                             print(f"[Proxy] Send error: {e}")
 
@@ -343,6 +350,12 @@ class MitmProxy:
                         try:
                             self.relay_socket.sendall(length_prefix + msg_bytes)
                             print("[Proxy] Tampered message sent!")
+                            # Log the actual tampered JSON that was sent for auditing
+                            try:
+                                print("\n[Proxy] [TAMPERED MESSAGE JSON]")
+                                print(json.dumps(msg, indent=2))
+                            except Exception:
+                                print("[Proxy] (Unable to pretty-print tampered JSON)")
                         except Exception as e:
                             print(f"[Proxy] Send error: {e}")
                     else:
